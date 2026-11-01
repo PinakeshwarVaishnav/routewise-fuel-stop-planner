@@ -169,6 +169,9 @@ class OpenRouteServiceClient:
             "POST",
             f"{self.base_url}/v2/directions/driving-car/geojson",
             json={"coordinates": coordinates},
+            headers={
+                "Accept": "application/geo+json",
+            },
         )
         features = payload.get("features") or []
         if not features:

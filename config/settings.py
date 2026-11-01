@@ -8,6 +8,9 @@ from pathlib import Path
 import os
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+from dotenv import load_dotenv
+
+load_dotenv(BASE_DIR / ".env")
 
 
 def load_local_environment_file(path: Path) -> None:
