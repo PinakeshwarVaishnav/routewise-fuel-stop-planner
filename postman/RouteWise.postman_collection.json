@@ -1,0 +1,72 @@
+{
+  "info": {
+    "_postman_id": "c8d7c9e8-5fc2-4f5e-ae6a-89e3a6b1d902",
+    "name": "RouteWise Fuel Planner API",
+    "description": "Demonstrates the health endpoint and a U.S. route-and-fuel-plan request. Start Django locally before sending requests.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8000",
+      "type": "default"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/health/"
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Create fuel-smart route",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Returns HTTP 200', function () { pm.response.to.have.status(200); });",
+              "pm.test('Includes route geometry and a fuel plan', function () {",
+              "    const body = pm.response.json();",
+              "    pm.expect(body).to.have.property('route');",
+              "    pm.expect(body.route).to.have.property('coordinates');",
+              "    pm.expect(body).to.have.property('fuel_plan');",
+              "    pm.expect(body.fuel_plan).to.have.property('is_feasible');",
+              "    pm.expect(body.fuel_plan).to.have.property('stops');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"start\": \"Los Angeles, CA\",\n  \"finish\": \"New York, NY\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/plan/"
+        }
+      },
+      "response": []
+    }
+  ]
+}

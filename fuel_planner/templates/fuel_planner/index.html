@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>RouteWise — Fuel-smart route planner</title>
+	<link rel="preconnect" href="https://unpkg.com">
+	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+		integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+	<style>
+		:root {
+			color-scheme: light;
+			--ink: #172b2a;
+			--muted: #657573;
+			--line: #dce6e2;
+			--paper: #f5f8f6;
+			--card: #ffffff;
+			--green: #176b57;
+			--green-dark: #0d4e40;
+			--mint: #e7f4ee;
+			--amber: #fff5df;
+			--shadow: 0 18px 48px rgba(23, 54, 48, .09);
+		}
+
+		* {
+			box-sizing: border-box;
+		}
+
+		body {
+			margin: 0;
+			background: var(--paper);
+			color: var(--ink);
+			font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+		}
+
+		.shell {
+			max-width: 1180px;
+			margin: 0 auto;
+			padding: 36px 22px 56px;
+		}
+
+		.topline {
+			display: flex;
+			align-items: center;
+			gap: 12px;
+			margin-bottom: 34px;
+		}
+
+		.logo {
+			width: 42px;
+			height: 42px;
+			display: grid;
+			place-items: center;
+			border-radius: 14px;
+			background: var(--green);
+			color: white;
+			font-size: 22px;
+			font-weight: 800;
+			box-shadow: 0 6px 18px rgba(23, 107, 87, .2);
+		}
+
+		.brand {
+			font-weight: 800;
+			letter-spacing: -.04em;
+			font-size: 20px;
+		}
+
+		.brand span {
+			color: var(--green);
+		}
+
+		.eyebrow {
+			color: var(--green);
+			text-transform: uppercase;
+			letter-spacing: .13em;
+			font-weight: 800;
+			font-size: 11px;
+		}
+
+		h1 {
+			font-size: clamp(34px, 5vw, 54px);
+			line-height: 1.03;
+			letter-spacing: -.055em;
+			margin: 10px 0 13px;
+			max-width: 720px;
+		}
+
+		.intro {
+			color: var(--muted);
+			line-height: 1.65;
+			max-width: 680px;
+			margin: 0 0 28px;
+		}
+
+		.layout {
+			display: grid;
+			grid-template-columns: 360px minmax(0, 1fr);
+			gap: 20px;
+			align-items: start;
+		}
+
+		.panel,
+		.map-panel {
+			background: var(--card);
+			border: 1px solid var(--line);
+			border-radius: 22px;
+			box-shadow: var(--shadow);
+		}
+
+		.panel {
+			padding: 24px;
+		}
+
+		.panel h2 {
+			font-size: 17px;
+			margin: 0 0 5px;
+			letter-spacing: -.02em;
+		}
+
+		.sub {
+			font-size: 13px;
+			color: var(--muted);
+			line-height: 1.5;
+			margin: 0 0 22px;
+		}
+
+		label {
+			display: block;
+			font-size: 12px;
+			font-weight: 750;
+			margin: 15px 0 8px;
+		}
+
+		input {
+			width: 100%;
+			border: 1px solid var(--line);
+			border-radius: 12px;
+			padding: 14px 13px;
+			font: inherit;
+			color: var(--ink);
+			background: #fbfdfc;
+			outline: none;
+			transition: .15s ease;
+		}
+
+		input:focus {
+			border-color: var(--green);
+			box-shadow: 0 0 0 3px rgba(23, 107, 87, .10);
+		}
+
+		button {
+			width: 100%;
+			border: 0;
+			border-radius: 12px;
+			margin-top: 21px;
+			padding: 15px;
+			background: var(--green);
+			color: white;
+			font-size: 14px;
+			font-weight: 800;
+			cursor: pointer;
+			transition: background .15s, transform .15s;
+		}
+
+		button:hover {
+			background: var(--green-dark);
+			transform: translateY(-1px);
+		}
+
+		button:disabled {
+			opacity: .6;
+			cursor: wait;
+			transform: none;
+		}
+
+		.assumptions {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 9px;
+			margin-top: 20px;
+		}
+
+		.assumption {
+			background: var(--mint);
+			border-radius: 12px;
+			padding: 11px;
+		}
+
+		.assumption strong {
+			display: block;
+			font-size: 17px;
+		}
+
+		.assumption span {
+			color: var(--muted);
+			font-size: 11px;
+		}
+
+		.map-panel {
+			padding: 10px;
+		}
+
+		#map {
+			height: 510px;
+			border-radius: 16px;
+			background: #e8efeb;
+		}
+
+		.map-caption {
+			padding: 13px 9px 5px;
+			display: flex;
+			justify-content: space-between;
+			gap: 12px;
+			color: var(--muted);
+			font-size: 12px;
+		}
+
+		.results {
+			display: none;
+			margin-top: 20px;
+		}
+
+		.metrics {
+			display: grid;
+			grid-template-columns: repeat(2, 1fr);
+			gap: 9px;
+		}
+
+		.metric {
+			padding: 12px;
+			background: #f4f8f6;
+			border: 1px solid #e8efeb;
+			border-radius: 13px;
+		}
+
+		.metric strong {
+			display: block;
+			font-size: 18px;
+			letter-spacing: -.03em;
+		}
+
+		.metric span {
+			font-size: 11px;
+			color: var(--muted);
+		}
+
+		.stop-list {
+			margin-top: 18px;
+		}
+
+		.stop {
+			border-top: 1px solid var(--line);
+			padding: 13px 0;
+		}
+
+		.stop strong {
+			display: block;
+			font-size: 13px;
+		}
+
+		.stop small {
+			color: var(--muted);
+			line-height: 1.5;
+		}
+
+		.notice {
+			margin-top: 14px;
+			padding: 12px;
+			border-radius: 12px;
+			background: var(--amber);
+			color: #6e5119;
+			font-size: 11px;
+			line-height: 1.55;
+		}
+
+		.error {
+			color: #a12d2d;
+			background: #fff0f0;
+			border-radius: 12px;
+			padding: 12px;
+			font-size: 12px;
+			margin-top: 14px;
+			display: none;
+		}
+
+		.foot {
+			color: var(--muted);
+			font-size: 11px;
+			margin-top: 22px;
+			line-height: 1.5;
+		}
+
+		@media (max-width: 850px) {
+			.layout {
+				grid-template-columns: 1fr;
+			}
+
+			#map {
+				height: 420px;
+			}
+
+			.shell {
+				padding-top: 23px;
+			}
+		}
+	</style>
+</head>
+
+<body>
+	<main class="shell">
+		<div class="topline">
+			<div class="logo">R</div>
+			<div class="brand">route<span>wise</span></div>
+		</div>
+		<div class="eyebrow">Fuel-smart road trips</div>
+		<h1>Take the road.<br>Spend less on fuel.</h1>
+		<p class="intro">Plan a U.S. drive, see the route, and find cost-effective fuel stops without asking the
+			routing service for every station along the way.</p>
+
+		<section class="layout">
+			<aside class="panel">
+				<h2>Plan your drive</h2>
+				<p class="sub">Enter U.S. cities, states, ZIP codes, or street addresses.</p>
+				<form id="plan-form">
+					<label for="start">STARTING LOCATION</label>
+					<input id="start" name="start" value="Los Angeles, CA"
+						placeholder="e.g. Los Angeles, CA" required>
+					<label for="finish">DESTINATION</label>
+					<input id="finish" name="finish" value="New York, NY"
+						placeholder="e.g. New York, NY" required>
+					<button id="submit-button" type="submit">Find my fuel-smart route →</button>
+				</form>
+				<div class="assumptions">
+					<div class="assumption"><strong>500 mi</strong><span>Maximum tank range</span>
+					</div>
+					<div class="assumption"><strong>10 mpg</strong><span>Assumed fuel economy</span>
+					</div>
+				</div>
+				<div class="error" id="error"></div>
+				<div class="results" id="results">
+					<div class="eyebrow" style="margin:22px 0 10px">Trip estimate</div>
+					<div class="metrics" id="metrics"></div>
+					<div class="stop-list" id="stops"></div>
+					<div class="notice" id="notice"></div>
+				</div>
+				<p class="foot">Fuel prices come from the supplied assessment CSV, not a live feed.
+					City-level map pins are approximate unless exact coordinates have been supplied.
+				</p>
+			</aside>
+
+			<section class="map-panel">
+				<div id="map" aria-label="Driving route map"></div>
+				<div class="map-caption"><span>Driving route and recommended fuel stops</span><span>Map
+						data © OpenStreetMap</span></div>
+			</section>
+		</section>
+	</main>
+
+	<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+		integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+	<script>
+		const map = L.map('map', {scrollWheelZoom: true}).setView([39.5, -98.35], 4);
+		L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+			maxZoom: 19,
+			attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>'
+		}).addTo(map);
+
+		let routeLayer = null;
+		let stopLayer = L.layerGroup().addTo(map);
+
+		const money = (value) => new Intl.NumberFormat('en-US', {
+			style: 'currency', currency: 'USD'
+		}).format(Number(value));
+
+		// Provider labels and imported station names are data, never trusted HTML.
+		// Escape them before placing them inside Leaflet popups or result markup.
+		const escapeHtml = (value) => String(value).replace(/[&<>\"']/g, (character) => ({
+			'&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', "'": '&#39;'
+		})[character]);
+
+		function showError(message) {
+			const error = document.getElementById('error');
+			error.textContent = message;
+			error.style.display = 'block';
+		}
+
+		function renderPlan(data) {
+			if (routeLayer) map.removeLayer(routeLayer);
+			stopLayer.clearLayers();
+
+			routeLayer = L.geoJSON({type: 'Feature', geometry: data.route, properties: {}}, {
+				style: {color: '#176b57', weight: 5, opacity: .88}
+			}).addTo(map);
+
+			const bounds = routeLayer.getBounds();
+			const start = data.origin;
+			const finish = data.destination;
+			L.circleMarker([start.latitude, start.longitude], {
+				radius: 7, color: '#ffffff', weight: 2, fillColor: '#2577c9', fillOpacity: 1
+			}).bindPopup(`<strong>Start</strong><br>${escapeHtml(start.label)}`).addTo(stopLayer);
+			L.circleMarker([finish.latitude, finish.longitude], {
+				radius: 7, color: '#ffffff', weight: 2, fillColor: '#bd5e45', fillOpacity: 1
+			}).bindPopup(`<strong>Destination</strong><br>${escapeHtml(finish.label)}`).addTo(stopLayer);
+
+			data.fuel_plan.stops.forEach((stop, index) => {
+				const marker = L.marker([stop.latitude, stop.longitude]).bindPopup(
+					`<strong>${index + 1}. ${escapeHtml(stop.name)}</strong><br>${escapeHtml(stop.city)}, ${escapeHtml(stop.state)}` +
+					`<br>${money(stop.price_per_gallon_usd)} / gallon` +
+					`<br>Buy ${stop.gallons_to_purchase.toFixed(2)} gallons` +
+					`<br>Estimated stop cost: ${money(stop.estimated_purchase_cost_usd)}` +
+					(stop.location_precision === 'exact' ? '' : '<br><em>Approximate city-level pin</em>')
+				);
+				marker.addTo(stopLayer);
+			});
+			map.fitBounds(bounds, {padding: [25, 25]});
+
+			const plan = data.fuel_plan;
+			document.getElementById('metrics').innerHTML = [
+				[`${data.route.distance_miles.toLocaleString()} mi`, 'Route distance'],
+				[`${data.route.duration_hours.toLocaleString()} h`, 'Estimated drive time'],
+				[String(plan.stop_count), 'Fuel stops'],
+				[plan.fuel_cost_usd === null ? '—' : money(plan.fuel_cost_usd), 'En-route fuel purchases']
+			].map(([value, label]) => `<div class="metric"><strong>${value}</strong><span>${label}</span></div>`).join('');
+
+			const stopHeading = plan.is_feasible ? 'Recommended fuel stops' : 'No feasible fuel plan';
+			const stopHtml = plan.stops.length ? plan.stops.map((stop, index) => `
+        <div class="stop">
+          <strong>${index + 1}. ${escapeHtml(stop.name)}</strong>
+          <small>${escapeHtml(stop.city)}, ${escapeHtml(stop.state)} · ${money(stop.price_per_gallon_usd)}/gal<br>
+          Buy ${stop.gallons_to_purchase.toFixed(2)} gal · Estimated ${money(stop.estimated_purchase_cost_usd)}</small>
+        </div>`).join('') : `<div class="stop"><small>${escapeHtml(plan.reason)}</small></div>`;
+			document.getElementById('stops').innerHTML = `<strong>${stopHeading}</strong>${stopHtml}`;
+			document.getElementById('notice').textContent = data.warnings.join(' ');
+			document.getElementById('results').style.display = 'block';
+		}
+
+		document.getElementById('plan-form').addEventListener('submit', async (event) => {
+			event.preventDefault();
+			const button = document.getElementById('submit-button');
+			const error = document.getElementById('error');
+			error.style.display = 'none';
+			button.disabled = true;
+			button.textContent = 'Planning your route…';
+
+			try {
+				const response = await fetch('/api/v1/plan/', {
+					method: 'POST',
+					headers: {'Content-Type': 'application/json'},
+					body: JSON.stringify({
+						start: document.getElementById('start').value,
+						finish: document.getElementById('finish').value
+					})
+				});
+				const data = await response.json();
+				if (!response.ok) {
+					throw new Error(data.detail || data.error || 'The route could not be calculated.');
+				}
+				renderPlan(data);
+			} catch (err) {
+				showError(err.message || 'Something went wrong. Please try again.');
+			} finally {
+				button.disabled = false;
+				button.textContent = 'Find my fuel-smart route →';
+			}
+		});
+	</script>
+</body>
+
+</html>
