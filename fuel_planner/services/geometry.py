@@ -139,3 +139,48 @@ def stations_near_route(
         )
 
     return candidates
+
+
+def simplify_route(
+    route_coordinates: list[list[float]],
+    tolerance_miles: float = 0.25,
+) -> list[list[float]]:
+    """Douglas-Peucker simplification so the JSON response stays small and fast.
+
+    Station projection still uses the full-resolution route; only the line sent
+    to the browser is simplified. Iterative to avoid recursion limits.
+    """
+    n = len(route_coordinates)
+    if n <= 2:
+        return [list(point) for point in route_coordinates]
+    mean_lat = sum(float(point[1]) for point in route_coordinates) / n
+    kx = 69.172 * cos(radians(mean_lat))
+    xs = [float(point[0]) * kx for point in route_coordinates]
+    ys = [float(point[1]) * 69.0 for point in route_coordinates]
+
+    keep = [False] * n
+    keep[0] = keep[-1] = True
+    stack = [(0, n - 1)]
+    while stack:
+        first, last = stack.pop()
+        dx, dy = xs[last] - xs[first], ys[last] - ys[first]
+        length_sq = dx * dx + dy * dy
+        best, best_index = -1.0, -1
+        for i in range(first + 1, last):
+            px, py = xs[i] - xs[first], ys[i] - ys[first]
+            if length_sq == 0:
+                distance = hypot(px, py)
+            else:
+                t = max(0.0, min(1.0, (px * dx + py * dy) / length_sq))
+                distance = hypot(px - t * dx, py - t * dy)
+            if distance > best:
+                best, best_index = distance, i
+        if best > tolerance_miles:
+            keep[best_index] = True
+            stack.append((first, best_index))
+            stack.append((best_index, last))
+    return [
+        [round(float(route_coordinates[i][0]), 5), round(float(route_coordinates[i][1]), 5)]
+        for i in range(n)
+        if keep[i]
+    ]

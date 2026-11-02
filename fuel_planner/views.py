@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from django.conf import settings
+from django.db.models import Avg
 from django.shortcuts import render
 from rest_framework import status
 from rest_framework.decorators import api_view, throttle_classes
@@ -9,8 +10,8 @@ from rest_framework.throttling import AnonRateThrottle
 
 from .models import FuelStation
 from .serializers import PlanRequestSerializer
-from .services.geometry import stations_near_route
-from .services.optimizer import minimum_cost_fuel_plan
+from .services.geometry import simplify_route, stations_near_route
+from .services.optimizer import minimum_cost_fuel_plan, with_total_trip_cost
 from .services.ors_client import (
     LocationNotFound,
     OpenRouteServiceClient,
@@ -85,7 +86,25 @@ def plan_route(request):
         route_coordinates,
         max_deviation_miles=settings.MAX_STATION_DEVIATION_MILES,
     )
-    fuel_plan = minimum_cost_fuel_plan(distance_miles, nearby_stations)
+    fuel_plan = minimum_cost_fuel_plan(
+        distance_miles,
+        nearby_stations,
+        min_saving_per_gallon=settings.MIN_PRICE_SAVING_PER_GALLON,
+        min_purchase_gallons=settings.MIN_PURCHASE_GALLONS,
+    )
+
+    # Price the starting tank so the total covers ALL fuel burned (10 mpg).
+    if fuel_plan["stops"]:
+        reference_price = fuel_plan["stops"][0]["price_per_gallon_usd"]
+        basis = "price at the first recommended fuel stop"
+    elif nearby_stations:
+        reference_price = min(s["price_per_gallon"] for s in nearby_stations)
+        basis = "cheapest station near the route"
+    else:
+        average = stations.aggregate(avg=Avg("price_per_gallon"))["avg"]
+        reference_price = float(average) if average is not None else None
+        basis = "average price in the supplied CSV"
+    fuel_plan = with_total_trip_cost(fuel_plan, reference_price, basis)
 
     warnings = [
         (
@@ -100,15 +119,20 @@ def plan_route(request):
             "Confirm the station address before travelling."
         ),
         (
+            "Detours to reach a station are not added to fuel use or cost; the corridor "
+            "is kept small so they are minor."
+        ),
+        (
             f"Candidate stations are retained only when their representative point "
             f"is within {settings.MAX_STATION_DEVIATION_MILES:g} miles of the route. "
             "This is a screening radius, not a promise that the station is directly "
             "beside the highway."
         ),
         (
-            "The vehicle is assumed to start with a full 50-gallon tank. The reported "
-            "trip fuel cost includes fuel purchased after departure, not the fuel "
-            "already in the starting tank."
+            "The vehicle is assumed to start with a full 50-gallon tank. "
+            "total_trip_fuel_cost_usd prices all fuel burned (distance / 10 mpg): fuel "
+            "bought en route plus the starting tank, valued at the reference price "
+            "named in starting_fuel_price_basis."
         ),
     ]
 
@@ -125,7 +149,9 @@ def plan_route(request):
             "destination": finish,
             "route": {
                 "type": "LineString",
-                "coordinates": route_coordinates,
+                "coordinates": simplify_route(
+                    route_coordinates, settings.ROUTE_SIMPLIFY_TOLERANCE_MILES
+                ),
                 "distance_miles": round(distance_miles, 2),
                 "distance_kilometers": round(distance_miles * 1.609344, 2),
                 "duration_seconds": round(route["duration_seconds"]),
@@ -150,9 +176,20 @@ def plan_route(request):
                     if fuel_plan["fuel_cost_usd"] is not None
                     else None
                 ),
+                "total_trip_fuel_cost_usd": (
+                    str(fuel_plan["total_trip_cost_usd"])
+                    if fuel_plan["total_trip_cost_usd"] is not None
+                    else None
+                ),
+                "starting_tank_fuel_cost_usd": (
+                    str(fuel_plan["starting_tank_cost_usd"])
+                    if fuel_plan["starting_tank_cost_usd"] is not None
+                    else None
+                ),
+                "starting_fuel_price_basis": fuel_plan["starting_fuel_price_basis"],
             },
             "data_quality": {
-                "geolocated_station_count": len(nearby_stations),
+                "stations_within_corridor": len(nearby_stations),
                 "station_location_method": "Census place internal point unless exact override",
                 "fuel_price_policy": "lowest observed price per station ID in supplied CSV",
             },

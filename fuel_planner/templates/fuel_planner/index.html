@@ -420,7 +420,8 @@
 				[`${data.route.distance_miles.toLocaleString()} mi`, 'Route distance'],
 				[`${data.route.duration_hours.toLocaleString()} h`, 'Estimated drive time'],
 				[String(plan.stop_count), 'Fuel stops'],
-				[plan.fuel_cost_usd === null ? '—' : money(plan.fuel_cost_usd), 'En-route fuel purchases']
+				[plan.total_trip_fuel_cost_usd === null ? '—' : money(plan.total_trip_fuel_cost_usd), 'Total fuel cost (all fuel used)'],
+				[plan.fuel_cost_usd === null ? '—' : money(plan.fuel_cost_usd), 'Bought at stops en route']
 			].map(([value, label]) => `<div class="metric"><strong>${value}</strong><span>${label}</span></div>`).join('');
 
 			const stopHeading = plan.is_feasible ? 'Recommended fuel stops' : 'No feasible fuel plan';

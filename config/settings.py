@@ -7,26 +7,11 @@ an assessment demo, not a production deployment.
 from pathlib import Path
 import os
 
-BASE_DIR = Path(__file__).resolve().parent.parent
 from dotenv import load_dotenv
 
+BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
-
-def load_local_environment_file(path: Path) -> None:
-    """Load simple KEY=VALUE entries from .env without another dependency."""
-    if not path.exists():
-        return
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        value = value.strip().strip('"').strip("'")
-        os.environ.setdefault(key.strip(), value)
-
-
-load_local_environment_file(BASE_DIR / ".env")
 
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "unsafe-local-development-key-change-me")
 DEBUG = os.getenv("DJANGO_DEBUG", "True").lower() == "true"
@@ -109,7 +94,19 @@ ORS_API_KEY = os.getenv("ORS_API_KEY", "")
 ORS_BASE_URL = "https://api.openrouteservice.org"
 ORS_GEOCODE_CACHE_SECONDS = 60 * 60 * 24 * 30
 ORS_ROUTE_CACHE_SECONDS = 60 * 60 * 24
-MAX_STATION_DEVIATION_MILES = float(os.getenv("MAX_STATION_DEVIATION_MILES", "25"))
+# Stations farther than this from the route are ignored: detours cost fuel and time.
+MAX_STATION_DEVIATION_MILES = float(os.getenv("MAX_STATION_DEVIATION_MILES", "5"))
+# A cheaper station only changes the plan if it saves at least this much per gallon.
+# This avoids absurd stops that buy under a gallon to save a cent.
+MIN_PRICE_SAVING_PER_GALLON = float(os.getenv("MIN_PRICE_SAVING_PER_GALLON", "0.05"))
+# Smallest purchase worth stopping for (gallons); smaller buys are rounded up.
+MIN_PURCHASE_GALLONS = float(os.getenv("MIN_PURCHASE_GALLONS", "5"))
+# Route line sent to the browser is simplified to this tolerance (miles).
+ROUTE_SIMPLIFY_TOLERANCE_MILES = 0.25
+
+# Django's default ("same-origin") strips the Referer header, and the public
+# OpenStreetMap tile servers answer 403 "Access blocked" without one.
+SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 
 REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
@@ -123,7 +120,7 @@ REST_FRAMEWORK = {
         "rest_framework.throttling.AnonRateThrottle",
     ],
     "DEFAULT_THROTTLE_RATES": {
-        "anon": "60/hour",
+        "anon": "600/hour",
     },
 }
 

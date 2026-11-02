@@ -33,19 +33,19 @@ It does **not** contain latitude, longitude, or a price-observation timestamp. T
 1. **Coordinates:** The importer attaches the 2025 U.S. Census Places Gazetteer internal point for each matching city/state. This is an approximate place-level location, not the exact truck-stop driveway or pump. Exact coordinates can override it with `--coordinates`.
 2. **Repeated station IDs:** The CSV contains repeated station IDs with different prices. Because no timestamp is supplied, the importer keeps the lowest observed price for each ID. That is an explicit best-observed-price assumption, not a claim that the value is current.
 3. **Fuel spending:** The vehicle begins with a full 50-gallon tank. The result's `fuel_cost_usd` includes purchases made after departure. It does not include the starting tank, because the source data does not tell us where or at what price that fuel was bought.
-4. **Route corridor:** A representative station point must lie within `MAX_STATION_DEVIATION_MILES` of the route. The chosen point can still be far from the real station because of the missing source coordinates.
+4. **Route corridor:** A representative station point must lie within `MAX_STATION_DEVIATION_MILES` (default 5) of the route. The chosen point can still be far from the real station because of the missing source coordinates.
 5. **Driving profile:** The API plans a normal car route (`driving-car`). Change the ORS profile if the assessment expects heavy truck restrictions.
 
-These are deliberate, visible constraints. Do not describe approximate place points as exact station coordinates in an interview.
+These are deliberate, visible constraints.
 
 ## Requirements
 
 - Python 3.12 or later.
 - Django 6.1.2.
-- Django REST Framework 3.18.1.
+- Django REST Framework 3.18.3.
 - An OpenRouteService API key. The free Standard plan currently lists 2,000 directions requests/day and 1,000 geocoding requests/day; provider quotas can change.
 
-Django 6.1.2 requires Python 3.12+. DRF 3.18.0 added Django 6.1 support; 3.18.1 is the patch release used here.
+Django 6.1.2 requires Python 3.12+. DRF 3.18.0 added Django 6.1 support; 3.18.3 is the patch release used here.
 
 ## Step 1 — create a virtual environment
 
@@ -53,7 +53,7 @@ Django 6.1.2 requires Python 3.12+. DRF 3.18.0 added Django 6.1 support; 3.18.1 
 
 ```bash
 cd routewise_assessment
-python3.13 -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
@@ -63,7 +63,7 @@ python -m pip install -r requirements.txt
 
 ```powershell
 cd routewise_assessment
-py -3.13 -m venv .venv
+py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
@@ -87,7 +87,7 @@ ORS_API_KEY=your_real_key_here
 DJANGO_SECRET_KEY=a-long-random-secret-value
 DJANGO_DEBUG=True
 DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost
-MAX_STATION_DEVIATION_MILES=25
+MAX_STATION_DEVIATION_MILES=5
 ```
 
 ## Step 3 — create the database
@@ -234,12 +234,6 @@ The tests use synthetic route geometry and prices. They do not spend provider qu
 
 Import `postman/RouteWise.postman_collection.json` into Postman, start the local Django server, and send the `Create fuel-smart route` request. The collection uses the same sample locations as the browser demo.
 
-## Documentation for the assessment
-
-- `docs/EXPLAIN_THE_CODE.md` — request flow, geometry, greedy algorithm, fuel accounting, and caching.
-- `docs/INTERVIEW_PREP.md` — architecture walkthrough, likely interviewer questions, assumptions, and production improvements.
-- `docs/LOOM_SCRIPT.md` — a timed five-minute demo outline.
-
 ## How the optimizer works
 
 A tempting but incorrect shortcut is “sort nearby stations by price and pick the cheapest.” That ignores how far the vehicle can travel and how much fuel is left in the tank.
@@ -266,19 +260,6 @@ The algorithm is in `fuel_planner/services/optimizer.py`. It accepts plain Pytho
 - **Database indexes:** state/city and latitude/longitude indexes support the local data lookups.
 
 An uncached trip is three external calls, which is within the assessment's acceptable two-or-three-call target. Repeat requests can use cached geocoding and routing data.
-
-## Interview discussion points
-
-Be ready to explain:
-
-- Why the CSV had to be cleaned before inserting it into a database.
-- Why station coordinates cannot be inferred precisely from city names.
-- Why price timestamps are important, and what the lowest-observed-price assumption means.
-- Why the fuel algorithm checks range before price.
-- Why a nearest-cheaper-station greedy strategy is optimal for the stated single-route assumptions.
-- Why the initial tank is accounted for separately from purchases during the trip.
-- Why provider calls and geocoding results are cached.
-- What you would change for a production system (exact station coordinates, a price feed with timestamps, PostgreSQL/PostGIS, Redis, observability, authentication, and a heavy-truck routing profile if needed).
 
 ## Source references
 

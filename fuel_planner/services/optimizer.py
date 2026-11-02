@@ -27,6 +27,7 @@ DEFAULT_TANK_RANGE_MILES = 500.0
 DEFAULT_MPG = 10.0
 TANK_CAPACITY_GALLONS = DEFAULT_TANK_RANGE_MILES / DEFAULT_MPG
 CENTS = Decimal("0.01")
+DEFAULT_MIN_SAVING_PER_GALLON = 0.05
 
 
 def _collapse_nearby_positions(
@@ -110,6 +111,8 @@ def minimum_cost_fuel_plan(
     *,
     tank_range_miles: float = DEFAULT_TANK_RANGE_MILES,
     miles_per_gallon: float = DEFAULT_MPG,
+    min_saving_per_gallon: float = 0.0,
+    min_purchase_gallons: float = 0.0,
 ) -> dict[str, Any]:
     """Return the globally cheapest feasible refuelling plan on this route.
 
@@ -189,7 +192,10 @@ def minimum_cost_fuel_plan(
             candidate_position = float(candidate["route_position_miles"])
             if candidate_position - current_position > tank_range_miles + 1e-9:
                 break
-            if float(candidate["price_per_gallon"]) < current_price - 1e-9:
+            if (
+                float(candidate["price_per_gallon"])
+                < current_price - min_saving_per_gallon - 1e-9
+            ):
                 next_cheaper_index = candidate_index
                 break
 
@@ -202,6 +208,19 @@ def minimum_cost_fuel_plan(
 
             if gallons_to_buy > tank_capacity - fuel_remaining + 1e-7:
                 return _unreachable_result(total_fuel_used, tank_capacity)
+
+            # Practical rule: nobody stops to buy a splash of fuel. Round small
+            # purchases up, but never beyond the tank or what the trip still needs.
+            if 0 < gallons_to_buy < min_purchase_gallons:
+                still_needed = distance_to_destination / miles_per_gallon - fuel_remaining
+                gallons_to_buy = max(
+                    gallons_to_buy,
+                    min(
+                        min_purchase_gallons,
+                        tank_capacity - fuel_remaining,
+                        still_needed,
+                    ),
+                )
 
             _append_purchase(
                 purchases,
@@ -300,4 +319,31 @@ def _unreachable_result(total_fuel_used: float, tank_capacity: float) -> dict[st
             "The available stations do not form a chain with gaps of 500 miles or less. "
             "The vehicle cannot complete this route with the supplied station data."
         ),
+    }
+
+
+def with_total_trip_cost(
+    plan: dict[str, Any],
+    reference_price_per_gallon: float | None,
+    basis: str,
+) -> dict[str, Any]:
+    """Add the cost of ALL fuel burned, not just fuel bought after departure.
+
+    The fuel in the starting tank is priced at ``reference_price_per_gallon``
+    (the CSV has no price for the starting location), so a short trip that needs
+    no stops still reports a realistic fuel cost.
+    """
+    en_route = plan["fuel_cost_usd"]
+    if en_route is None or reference_price_per_gallon is None:
+        return {**plan, "starting_tank_cost_usd": None, "total_trip_cost_usd": None,
+                "starting_fuel_price_basis": basis}
+    starting = (
+        Decimal(str(plan["initial_fuel_used_gallons"]))
+        * Decimal(str(reference_price_per_gallon))
+    ).quantize(CENTS, rounding=ROUND_HALF_UP)
+    return {
+        **plan,
+        "starting_tank_cost_usd": starting,
+        "total_trip_cost_usd": (en_route + starting).quantize(CENTS),
+        "starting_fuel_price_basis": basis,
     }

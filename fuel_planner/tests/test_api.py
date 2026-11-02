@@ -36,6 +36,7 @@ class PlanApiTests(TestCase):
         self.assertIn("fuel_plan", response.data)
         self.assertIn("is_feasible", response.data["fuel_plan"])
         self.assertIn("stops", response.data["fuel_plan"])
+        self.assertIn("total_trip_fuel_cost_usd", response.data["fuel_plan"])
         self.assertEqual(route_mock.call_count, 1)
         self.assertEqual(geocode_mock.call_count, 2)
 
@@ -56,3 +57,9 @@ class PlanApiTests(TestCase):
         response = self.client.get("/api/v1/health/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["status"], "ok")
+
+    def test_referrer_policy_allows_openstreetmap_tiles(self):
+        response = self.client.get("/")
+        self.assertEqual(
+            response.headers["Referrer-Policy"], "strict-origin-when-cross-origin"
+        )
