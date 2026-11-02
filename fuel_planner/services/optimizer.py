@@ -212,7 +212,9 @@ def minimum_cost_fuel_plan(
             # Practical rule: nobody stops to buy a splash of fuel. Round small
             # purchases up, but never beyond the tank or what the trip still needs.
             if 0 < gallons_to_buy < min_purchase_gallons:
-                still_needed = distance_to_destination / miles_per_gallon - fuel_remaining
+                still_needed = (
+                    distance_to_destination / miles_per_gallon - fuel_remaining
+                )
                 gallons_to_buy = max(
                     gallons_to_buy,
                     min(
@@ -254,28 +256,34 @@ def minimum_cost_fuel_plan(
 
         # Current price is no higher than any station we can reach in one tank.
         # Fill here, then advance to the next station and reconsider prices.
-        gallons_to_buy = max(0.0, tank_capacity - fuel_remaining)
-        _append_purchase(
-            purchases,
-            current_station,
-            gallons_to_buy,
-            fuel_remaining,
-            float(stations[current_index + 1]["route_position_miles"])
-            if current_index + 1 < len(stations)
-            else route_distance_miles,
-        )
-        fuel_remaining = tank_capacity
-
         next_index = current_index + 1
         if next_index >= len(stations):
             return _unreachable_result(total_fuel_used, tank_capacity)
-
         next_position = float(stations[next_index]["route_position_miles"])
         leg_distance = next_position - current_position
         if leg_distance > tank_range_miles + 1e-9:
             return _unreachable_result(total_fuel_used, tank_capacity)
 
-        fuel_remaining = max(0.0, fuel_remaining - leg_distance / miles_per_gallon)
+        gallons_to_buy = max(0.0, tank_capacity - fuel_remaining)
+        # A nearly full tank is not worth a stop: skip the top-off when the
+        # purchase is tiny and the current fuel already reaches the next station.
+        skip_top_off = (
+            gallons_to_buy < min_purchase_gallons
+            and leg_distance / miles_per_gallon <= fuel_remaining + 1e-9
+        )
+        if skip_top_off:
+            fuel_remaining -= leg_distance / miles_per_gallon
+            current_index = next_index
+            continue
+
+        _append_purchase(
+            purchases,
+            current_station,
+            gallons_to_buy,
+            fuel_remaining,
+            next_position,
+        )
+        fuel_remaining = max(0.0, tank_capacity - leg_distance / miles_per_gallon)
         current_index = next_index
 
     if not destination_reached:
@@ -335,8 +343,12 @@ def with_total_trip_cost(
     """
     en_route = plan["fuel_cost_usd"]
     if en_route is None or reference_price_per_gallon is None:
-        return {**plan, "starting_tank_cost_usd": None, "total_trip_cost_usd": None,
-                "starting_fuel_price_basis": basis}
+        return {
+            **plan,
+            "starting_tank_cost_usd": None,
+            "total_trip_cost_usd": None,
+            "starting_fuel_price_basis": basis,
+        }
     starting = (
         Decimal(str(plan["initial_fuel_used_gallons"]))
         * Decimal(str(reference_price_per_gallon))

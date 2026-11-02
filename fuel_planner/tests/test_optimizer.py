@@ -148,3 +148,16 @@ class FuelOptimizerTests(SimpleTestCase):
             str(total["total_trip_cost_usd"]),
             str(total["fuel_cost_usd"] + total["starting_tank_cost_usd"]),
         )
+
+    def test_nearly_full_tank_is_not_topped_off_at_every_station(self):
+        stations = [
+            station(i, 100 + i * 40, 3.00 + i * 0.001, f"Town {i}")
+            for i in range(1, 25)
+        ]
+        plan = minimum_cost_fuel_plan(1100, stations, min_purchase_gallons=5)
+        self.assertTrue(plan["is_feasible"])
+        self.assertTrue(
+            all(s["gallons_to_purchase"] >= 5 for s in plan["stops"][:-1]),
+            [s["gallons_to_purchase"] for s in plan["stops"]],
+        )
+        self.assertAlmostEqual(plan["fuel_purchased_gallons"], 60.0, places=2)
