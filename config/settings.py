@@ -126,3 +126,6 @@ REST_FRAMEWORK = {
         "anon": "60/hour",
     },
 }
+
+# Allow external map tile providers to receive the page origin.
+SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
