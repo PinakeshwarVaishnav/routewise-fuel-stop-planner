@@ -78,27 +78,104 @@ def project_point_onto_route(
     return best_route_position, best_distance
 
 
+class _RouteIndex:
+    """Pre-computed route segments plus a coarse grid for fast station lookups.
+
+    Building this once per request turns the per-station cost from "scan every
+    route point with trigonometry" into "check a handful of nearby segments".
+    """
+
+    GRID_DEGREES = 1.0
+
+    def __init__(
+        self,
+        full_route: list[list[float]],
+        max_deviation_miles: float,
+        simplify_tolerance_miles: float,
+    ) -> None:
+        # Mileage always comes from the full-resolution route so positions stay
+        # accurate; only the nearest-point search uses the simplified line.
+        full_cumulative = [0.0]
+        for first, second in zip(full_route, full_route[1:]):
+            full_cumulative.append(
+                full_cumulative[-1]
+                + haversine_miles(
+                    float(first[1]), float(first[0]), float(second[1]), float(second[0])
+                )
+            )
+        kept = _simplify_indices(full_route, simplify_tolerance_miles)
+        route = [full_route[i] for i in kept]
+
+        self.segments: list[tuple[float, float, float, float, float, float, float, float]] = []
+        cumulative = 0.0
+        for k, (first, second) in enumerate(zip(route, route[1:])):
+            lon1, lat1 = float(first[0]), float(first[1])
+            lon2, lat2 = float(second[0]), float(second[1])
+            segment_miles = full_cumulative[kept[k + 1]] - full_cumulative[kept[k]]
+            if segment_miles == 0:
+                continue
+            cumulative = full_cumulative[kept[k]]
+            kx = 69.172 * cos(radians((lat1 + lat2) / 2))
+            seg_x = (lon2 - lon1) * kx
+            seg_y = (lat2 - lat1) * 69.0
+            self.segments.append(
+                (lon1, lat1, kx, seg_x, seg_y, seg_x * seg_x + seg_y * seg_y,
+                 segment_miles, cumulative)
+            )
+        self.total_miles = full_cumulative[-1]
+
+        # Coarse grid: only stations in a cell near the route get the exact test.
+        max_lat = max(abs(float(point[1])) for point in route)
+        cell_miles = 69.172 * max(cos(radians(max_lat)), 0.2) * self.GRID_DEGREES
+        margin = max(1, int(max_deviation_miles / cell_miles) + 1)
+        self.cells: set[tuple[int, int]] = set()
+        for first, second in zip(route, route[1:]):
+            lon1, lat1 = float(first[0]), float(first[1])
+            lon2, lat2 = float(second[0]), float(second[1])
+            steps = int(max(abs(lat2 - lat1), abs(lon2 - lon1)) / (self.GRID_DEGREES / 2)) + 1
+            for i in range(steps + 1):
+                t = i / steps
+                row = int((lat1 + (lat2 - lat1) * t) // self.GRID_DEGREES)
+                col = int((lon1 + (lon2 - lon1) * t) // self.GRID_DEGREES)
+                for dr in range(-margin, margin + 1):
+                    for dc in range(-margin, margin + 1):
+                        self.cells.add((row + dr, col + dc))
+
+    def may_be_near(self, latitude: float, longitude: float) -> bool:
+        key = (int(latitude // self.GRID_DEGREES), int(longitude // self.GRID_DEGREES))
+        return key in self.cells
+
+    def project(self, latitude: float, longitude: float) -> tuple[float, float]:
+        """Return (miles_from_route_start, nearest_distance_from_route)."""
+        best_distance = float("inf")
+        best_position = 0.0
+        for lon1, lat1, kx, seg_x, seg_y, sq_len, seg_miles, start in self.segments:
+            point_x = (longitude - lon1) * kx
+            point_y = (latitude - lat1) * 69.0
+            fraction = (point_x * seg_x + point_y * seg_y) / sq_len
+            fraction = min(1.0, max(0.0, fraction))
+            distance = hypot(point_x - fraction * seg_x, point_y - fraction * seg_y)
+            if distance < best_distance:
+                best_distance = distance
+                best_position = start + fraction * seg_miles
+        return best_position, best_distance
+
+
 def stations_near_route(
     stations: Iterable[Any],
     route_coordinates: list[list[float]],
     *,
     max_deviation_miles: float = 25.0,
+    simplify_tolerance_miles: float = 0.1,
 ) -> list[dict[str, Any]]:
     """Project station records onto a route and keep nearby candidates.
 
-    Stations sharing the same city-level representative point reuse one
-    geometry calculation. A route bounding-box check avoids most unnecessary
-    point-to-polyline calculations on long routes.
+    Speed: the route is simplified (default 0.1 mile tolerance, far finer than
+    the city-level station pins) and indexed once; a coarse grid rejects most
+    stations without any geometry. Stations sharing a coordinate are projected
+    once.
     """
-    latitudes = [float(point[1]) for point in route_coordinates]
-    longitudes = [float(point[0]) for point in route_coordinates]
-    padding_lat = max_deviation_miles / 69.0
-    highest_absolute_latitude = max(abs(value) for value in latitudes)
-    cosine = max(cos(radians(highest_absolute_latitude)), 0.2)
-    padding_lon = max_deviation_miles / (69.172 * cosine)
-
-    min_lat, max_lat = min(latitudes) - padding_lat, max(latitudes) + padding_lat
-    min_lon, max_lon = min(longitudes) - padding_lon, max(longitudes) + padding_lon
+    index = _RouteIndex(route_coordinates, max_deviation_miles, simplify_tolerance_miles)
 
     projected_by_coordinate: dict[tuple[float, float], tuple[float, float]] = {}
     candidates: list[dict[str, Any]] = []
@@ -109,13 +186,13 @@ def stations_near_route(
 
         lat = float(station.latitude)
         lon = float(station.longitude)
-        if not (min_lat <= lat <= max_lat and min_lon <= lon <= max_lon):
+        if not index.may_be_near(lat, lon):
             continue
 
         coordinate_key = (round(lat, 5), round(lon, 5))
         projected = projected_by_coordinate.get(coordinate_key)
         if projected is None:
-            projected = project_point_onto_route(lat, lon, route_coordinates)
+            projected = index.project(lat, lon)
             projected_by_coordinate[coordinate_key] = projected
 
         route_position, off_route_distance = projected
@@ -141,10 +218,10 @@ def stations_near_route(
     return candidates
 
 
-def simplify_route(
+def _simplify_indices(
     route_coordinates: list[list[float]],
-    tolerance_miles: float = 0.25,
-) -> list[list[float]]:
+    tolerance_miles: float,
+) -> list[int]:
     """Douglas-Peucker simplification so the JSON response stays small and fast.
 
     Station projection still uses the full-resolution route; only the line sent
@@ -152,7 +229,7 @@ def simplify_route(
     """
     n = len(route_coordinates)
     if n <= 2:
-        return [list(point) for point in route_coordinates]
+        return list(range(n))
     mean_lat = sum(float(point[1]) for point in route_coordinates) / n
     kx = 69.172 * cos(radians(mean_lat))
     xs = [float(point[0]) * kx for point in route_coordinates]
@@ -179,8 +256,15 @@ def simplify_route(
             keep[best_index] = True
             stack.append((first, best_index))
             stack.append((best_index, last))
+    return [i for i in range(n) if keep[i]]
+
+
+def simplify_route(
+    route_coordinates: list[list[float]],
+    tolerance_miles: float = 0.25,
+) -> list[list[float]]:
+    """Douglas-Peucker simplified copy of the route (coordinates rounded to 5 dp)."""
     return [
         [round(float(route_coordinates[i][0]), 5), round(float(route_coordinates[i][1]), 5)]
-        for i in range(n)
-        if keep[i]
+        for i in _simplify_indices(route_coordinates, tolerance_miles)
     ]

@@ -218,3 +218,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Postman local workspace files (the JSON collection is the source of truth)
+postman/.postman/
+postman/postman/

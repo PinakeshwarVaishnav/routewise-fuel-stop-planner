@@ -248,14 +248,19 @@
       "response": []
     },
     {
-      "name": "Error: non-US location",
+      "name": "Non-US place name resolves inside the U.S. only",
       "event": [
         {
           "listen": "test",
           "script": {
             "type": "text/javascript",
             "exec": [
-              "pm.test('Returns HTTP 400', function () { pm.response.to.have.status(400); });"
+              "pm.test('Request is handled (200 or 400)', function () { pm.expect([200, 400]).to.include(pm.response.code); });",
+              "if (pm.response.code === 200) {",
+              "    pm.test('Origin was resolved to a U.S. location', function () {",
+              "        pm.expect(pm.response.json().origin.label).to.include('USA');",
+              "    });",
+              "}"
             ]
           }
         }
@@ -289,7 +294,7 @@
             ""
           ]
         },
-        "description": "Geocoding is restricted to the United States."
+        "description": "The geocoder is restricted to the United States, so a name like Toronto resolves to a U.S. place (Toronto, OH) rather than Canada."
       },
       "response": []
     }

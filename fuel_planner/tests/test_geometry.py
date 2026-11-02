@@ -27,3 +27,22 @@ class SimplifyRouteTests(SimpleTestCase):
         self.assertEqual(out[0], [-100.0, 35.0])
         self.assertEqual(out[-1], [round(line[-1][0], 5), 35.0])
         self.assertLess(len(out), 5)
+
+
+class StationsNearRouteTests(SimpleTestCase):
+    def test_keeps_nearby_stations_and_drops_far_ones_with_accurate_mileage(self):
+        from types import SimpleNamespace
+        from fuel_planner.services.geometry import stations_near_route
+
+        route = [[-100 + i * 0.01, 35.0] for i in range(2001)]  # ~1,130 miles east
+        def st(i, lat, lon):
+            return SimpleNamespace(
+                station_id=i, name="s", address="a", city="c", state="TX",
+                price_per_gallon=3.0, latitude=lat, longitude=lon,
+                location_precision="place_point",
+            )
+        stations = [st(1, 35.02, -90.0), st(2, 36.5, -90.0), st(3, 35.0, -101.0)]
+        found = stations_near_route(stations, route, max_deviation_miles=5)
+        self.assertEqual([c["station_id"] for c in found], [1])
+        self.assertAlmostEqual(found[0]["route_position_miles"], 566, delta=5)
+        self.assertLess(found[0]["distance_from_route_miles"], 3)

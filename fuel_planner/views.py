@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from time import perf_counter
+
 from django.conf import settings
 from django.db.models import Avg
 from django.shortcuts import render
@@ -43,6 +45,7 @@ def plan_route(request):
     start_query = serializer.validated_data["start"]
     finish_query = serializer.validated_data["finish"]
     provider = OpenRouteServiceClient()
+    started = perf_counter()
 
     try:
         # These calls use separate caches. On a cold request we make two
@@ -61,6 +64,7 @@ def plan_route(request):
             status=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
 
+    provider_done = perf_counter()
     distance_miles = route["distance_meters"] / 1609.344
     route_coordinates = route["coordinates"]
 
@@ -86,6 +90,7 @@ def plan_route(request):
         route_coordinates,
         max_deviation_miles=settings.MAX_STATION_DEVIATION_MILES,
     )
+    stations_done = perf_counter()
     fuel_plan = minimum_cost_fuel_plan(
         distance_miles,
         nearby_stations,
@@ -105,6 +110,7 @@ def plan_route(request):
         reference_price = float(average) if average is not None else None
         basis = "average price in the supplied CSV"
     fuel_plan = with_total_trip_cost(fuel_plan, reference_price, basis)
+    finished = perf_counter()
 
     warnings = [
         (
@@ -194,6 +200,12 @@ def plan_route(request):
                 "fuel_price_policy": "lowest observed price per station ID in supplied CSV",
             },
             "warnings": warnings,
+            "timings_ms": {
+                "geocode_and_route_provider": round((provider_done - started) * 1000),
+                "station_matching": round((stations_done - provider_done) * 1000),
+                "fuel_optimizer": round((finished - stations_done) * 1000),
+                "total": round((finished - started) * 1000),
+            },
             "provider_calls_on_cache_miss": {
                 "geocoding": 2,
                 "directions": 1,
