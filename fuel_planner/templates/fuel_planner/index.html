@@ -361,8 +361,13 @@
 		integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 	<script>
 		const map = L.map('map', {scrollWheelZoom: true}).setView([39.5, -98.35], 4);
+
 		L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
 			maxZoom: 19,
+
+			// Explicitly send the page origin with tile requests.
+			referrerPolicy: 'strict-origin-when-cross-origin',
+
 			attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>'
 		}).addTo(map);
 
