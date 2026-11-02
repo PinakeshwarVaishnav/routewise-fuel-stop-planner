@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "c8d7c9e8-5fc2-4f5e-ae6a-89e3a6b1d902",
     "name": "RouteWise Fuel Planner API",
-    "description": "Demonstrates the health endpoint and a U.S. route-and-fuel-plan request. Start Django locally before sending requests.",
+    "description": "Health endpoint, the main U.S. route-and-fuel-plan request, and error cases. Start Django locally (python manage.py runserver) before sending requests.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -15,17 +15,6 @@
   "item": [
     {
       "name": "Health check",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": {
-          "raw": "{{baseUrl}}/api/v1/health/"
-        }
-      },
-      "response": []
-    },
-    {
-      "name": "Create fuel-smart route",
       "event": [
         {
           "listen": "test",
@@ -33,14 +22,52 @@
             "type": "text/javascript",
             "exec": [
               "pm.test('Returns HTTP 200', function () { pm.response.to.have.status(200); });",
+              "pm.test('Status is ok', function () { pm.expect(pm.response.json().status).to.eql('ok'); });"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/health/",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "health",
+            ""
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Create fuel-smart route (LA to NY)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Returns HTTP 200', function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.json();",
               "pm.test('Includes route geometry and a fuel plan', function () {",
-              "    const body = pm.response.json();",
-              "    pm.expect(body).to.have.property('route');",
               "    pm.expect(body.route).to.have.property('coordinates');",
-              "    pm.expect(body).to.have.property('fuel_plan');",
               "    pm.expect(body.fuel_plan).to.have.property('is_feasible');",
               "    pm.expect(body.fuel_plan).to.have.property('stops');",
-              "});"
+              "});",
+              "pm.test('Plan is feasible with multiple stops', function () {",
+              "    pm.expect(body.fuel_plan.is_feasible).to.eql(true);",
+              "    pm.expect(body.fuel_plan.stops.length).to.be.above(1);",
+              "});",
+              "pm.test('Total cost covers all fuel burned (>= en-route cost)', function () {",
+              "    pm.expect(parseFloat(body.fuel_plan.total_trip_fuel_cost_usd)).to.be.at.least(parseFloat(body.fuel_plan.fuel_cost_usd));",
+              "});",
+              "pm.test('At most 3 provider calls', function () { pm.expect(body.provider_calls_on_cache_miss.total).to.be.at.most(3); });"
             ]
           }
         }
@@ -63,8 +90,206 @@
           }
         },
         "url": {
-          "raw": "{{baseUrl}}/api/v1/plan/"
+          "raw": "{{baseUrl}}/api/v1/plan/",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "plan",
+            ""
+          ]
+        },
+        "description": "Main assessment request: route, fuel stops, and total fuel cost at 10 mpg with a 500-mile range."
+      },
+      "response": []
+    },
+    {
+      "name": "Short trip (no stops needed)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Returns HTTP 200', function () { pm.response.to.have.status(200); });",
+              "const plan = pm.response.json().fuel_plan;",
+              "pm.test('No stops needed within one tank', function () { pm.expect(plan.stops.length).to.eql(0); });",
+              "pm.test('Total fuel cost is above zero', function () { pm.expect(parseFloat(plan.total_trip_fuel_cost_usd)).to.be.above(0); });"
+            ]
+          }
         }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"start\": \"Los Angeles, CA\",\n  \"finish\": \"Las Vegas, NV\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/plan/",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "plan",
+            ""
+          ]
+        },
+        "description": "Trip shorter than 500 miles: no stops, but total fuel cost is still reported."
+      },
+      "response": []
+    },
+    {
+      "name": "Error: unknown address",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Returns HTTP 400', function () { pm.response.to.have.status(400); });",
+              "pm.test('Error is location_not_found', function () { pm.expect(pm.response.json().error).to.eql('location_not_found'); });"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"start\": \"asdfghjkl zzz qqq\",\n  \"finish\": \"New York, NY\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/plan/",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "plan",
+            ""
+          ]
+        },
+        "description": "Unresolvable start location should return a clean 400."
+      },
+      "response": []
+    },
+    {
+      "name": "Error: empty start",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Returns HTTP 400', function () { pm.response.to.have.status(400); });"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"start\": \"\",\n  \"finish\": \"New York, NY\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/plan/",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "plan",
+            ""
+          ]
+        },
+        "description": "Validation error before any provider call is made."
+      },
+      "response": []
+    },
+    {
+      "name": "Error: non-US location",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Returns HTTP 400', function () { pm.response.to.have.status(400); });"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"start\": \"Toronto, Canada\",\n  \"finish\": \"New York, NY\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/plan/",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "plan",
+            ""
+          ]
+        },
+        "description": "Geocoding is restricted to the United States."
       },
       "response": []
     }
